@@ -155,7 +155,7 @@ export const addActivity = async (userId: string, activity: {
     // First ensure the profile exists
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('id')
+      .select('id, total_carbon_saved')
       .eq('id', userId)
       .single();
 
@@ -188,30 +188,98 @@ export const addActivity = async (userId: string, activity: {
       throw error;
     }
     
-    // Update the user's total carbon saved
+    // Update the user's total carbon saved if this is a carbon-saving activity
     if (activity.carbon_impact < 0) { // Negative impact means carbon saved
       const carbonSaved = Math.abs(activity.carbon_impact);
+      const currentTotal = profile?.total_carbon_saved || 0;
+      const newTotal = currentTotal + carbonSaved;
       
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ 
-          total_carbon_saved: supabase.rpc('increment', { 
-            x: carbonSaved,
-            row_id: userId,
-            column_name: 'total_carbon_saved'
-          }) 
+          total_carbon_saved: newTotal
         })
         .eq('id', userId);
         
       if (updateError) {
         throw updateError;
       }
+
+      // Check for new achievements after updating carbon saved
+      await checkAndAwardAchievements(userId, newTotal);
     }
     
     return data;
   } catch (error) {
     console.error('Error in addActivity:', error);
     throw error;
+  }
+};
+
+export const checkAndAwardAchievements = async (userId: string, totalCarbonSaved: number) => {
+  try {
+    // Get achievements the user qualifies for but hasn't unlocked yet
+    const { data: availableAchievements, error: achievementsError } = await supabase
+      .from('achievements')
+      .select('id, carbon_required')
+      .lte('carbon_required', totalCarbonSaved);
+
+    if (achievementsError) {
+      throw achievementsError;
+    }
+
+    // Get achievements the user has already unlocked
+    const { data: unlockedAchievements, error: unlockedError } = await supabase
+      .from('user_achievements')
+      .select('achievement_id')
+      .eq('user_id', userId);
+
+    if (unlockedError) {
+      throw unlockedError;
+    }
+
+    const unlockedIds = new Set(unlockedAchievements?.map(ua => ua.achievement_id) || []);
+    
+    // Find new achievements to unlock
+    const newAchievements = availableAchievements?.filter(
+      achievement => !unlockedIds.has(achievement.id)
+    ) || [];
+
+    // Insert new user achievements
+    if (newAchievements.length > 0) {
+      const { error: insertError } = await supabase
+        .from('user_achievements')
+        .insert(
+          newAchievements.map(achievement => ({
+            user_id: userId,
+            achievement_id: achievement.id,
+          }))
+        );
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      // Update user level based on total achievements
+      const totalUnlocked = unlockedIds.size + newAchievements.length;
+      const newLevel = Math.min(10, Math.max(1, Math.floor(totalCarbonSaved / 100) + 1));
+
+      const { error: levelError } = await supabase
+        .from('profiles')
+        .update({ level: newLevel })
+        .eq('id', userId);
+
+      if (levelError) {
+        throw levelError;
+      }
+
+      return newAchievements;
+    }
+
+    return [];
+  } catch (error) {
+    console.error('Error checking achievements:', error);
+    return [];
   }
 };
 
