@@ -5,6 +5,7 @@ import Layout from './components/layout/Layout';
 import LoadingScreen from './components/common/LoadingScreen';
 
 // Lazy load pages for better performance
+const Landing = lazy(() => import('./pages/Landing'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
@@ -56,8 +57,10 @@ function App() {
   return (
     <Suspense fallback={<LoadingScreen />}>
       <Routes>
+        {/* Landing page */}
+        <Route path="/" element={<Landing />} />
+        
         {/* Public routes */}
-        <Route path="/" element={<Navigate to="/login" replace />} />
         <Route 
           path="/login" 
           element={
