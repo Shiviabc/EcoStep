@@ -28,13 +28,23 @@ const Login = () => {
       const { error: loginError } = await login(email, password);
       
       if (loginError) {
-        setError(loginError.message || 'Failed to login');
+        // Provide more specific error messages based on the error type
+        if (loginError.message?.includes('Invalid login credentials') || 
+            loginError.message?.includes('invalid_credentials')) {
+          setError('Invalid email or password. Please check your credentials and try again.');
+        } else if (loginError.message?.includes('Email not confirmed')) {
+          setError('Please check your email and confirm your account before logging in.');
+        } else if (loginError.message?.includes('Too many requests')) {
+          setError('Too many login attempts. Please wait a moment before trying again.');
+        } else {
+          setError(loginError.message || 'Failed to login. Please try again.');
+        }
       } else {
         navigate('/dashboard');
       }
     } catch (err) {
-      setError('An unexpected error occurred');
-      console.error(err);
+      setError('An unexpected error occurred. Please try again.');
+      console.error('Login error:', err);
     } finally {
       setIsLoading(false);
     }
